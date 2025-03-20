@@ -1,6 +1,6 @@
 //! An API server that verifies Sudoku puzzles using SP1 ZK proofs.
 //!
-//! To start the API server:
+//! API sunucusunu başlatmak için:
 //! ```shell
 //! RUST_LOG=info cargo run --release
 //! ```
@@ -24,7 +24,7 @@ use chrono;
 /// The ELF file for the Sudoku verifier program.
 pub const SUDOKU_ELF: &[u8] = include_elf!("sudoku-program");
 
-/// Command line arguments for the API.
+/// API için komut satırı argümanları.
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
@@ -35,14 +35,14 @@ struct Args {
     use_zkp: bool,
 }
 
-/// JSON structure for Sudoku verification request.
+/// Sudoku doğrulama isteği için JSON yapısı.
 #[derive(Deserialize, Debug)]
 struct SudokuRequest {
     board: [[u8; SUDOKU_SIZE]; SUDOKU_SIZE],
     solution: [[u8; SUDOKU_SIZE]; SUDOKU_SIZE],
 }
 
-/// JSON structure for Sudoku verification response.
+/// Sudoku doğrulama yanıtı için JSON yapısı.
 #[derive(Serialize, Debug)]
 struct SudokuResponse {
     is_valid: bool,
@@ -67,7 +67,7 @@ async fn main() {
     // Setup the API routes
     let app = Router::new()
         .route("/validate-sudoku", post(validate_sudoku))
-        .route("/", get(root_handler))  // Let's add a simple GET handler for the home page
+        .route("/", get(root_handler))  // Ana sayfa için basit bir GET handler'ı ekleyelim
         .layer(cors);
 
     // Start the server
@@ -78,32 +78,32 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-/// A simple GET handler for the home page
+/// Ana sayfa için basit bir GET handler'ı
 async fn root_handler() -> &'static str {
-    "Sudoku ZK Verifier API\n\nUsage: Send a POST request to the /validate-sudoku endpoint"
+    "Sudoku ZK Doğrulayıcı API\n\nKullanım: /validate-sudoku endpoint'ine POST isteği gönderin"
 }
 
-/// API endpoint that validates a Sudoku board.
+/// Sudoku tahtasını doğrulayan API endpoint'i.
 async fn validate_sudoku(Json(request): Json<SudokuRequest>) -> Json<SudokuResponse> {
     println!("Received sudoku verification request");
 
-    // First, let's perform normal validation
+    // Önce normal doğrulama yapalım
     let is_valid = verify_sudoku(request.board, request.solution);
     println!("Sudoku verification result: {}", is_valid);
 
-    // If it's valid, let's try to generate a ZK proof
+    // Eğer geçerliyse ZK kanıtı oluşturmaya çalışalım
     let mut proof_generated = false;
     
     if is_valid {
         println!("Attempting to generate ZK proof");
         
-        // Try to generate a proof with SP1
+        // SP1 ile kanıt oluşturmayı dene
         match generate_zk_proof(&request.board, &request.solution) {
             Ok(proof) => {
                 proof_generated = true;
                 println!("Successfully generated ZK proof of size {} bytes", proof.len());
                 
-                // Save ZK proof to a file
+                // ZK proof'u dosyaya kaydet
                 let proof_dir = "proofs";
                 std::fs::create_dir_all(proof_dir).unwrap_or_else(|_| {
                     println!("Proofs directory already exists or cannot be created");
@@ -131,24 +131,24 @@ async fn validate_sudoku(Json(request): Json<SudokuRequest>) -> Json<SudokuRespo
     })
 }
 
-/// Generates a ZK proof using SP1.
+/// SP1 ile ZK kanıtı oluşturur.
 fn generate_zk_proof(board: &[[u8; SUDOKU_SIZE]; SUDOKU_SIZE], solution: &[[u8; SUDOKU_SIZE]; SUDOKU_SIZE]) -> Result<Vec<u8>, String> {
     println!("Starting ZK proof generation process");
     
-    // Create input using SP1Stdin
+    // SP1Stdin kullanarak girdi oluşturma
     let mut stdin = SP1Stdin::new();
     
-    // Write board and solution to stdin
+    // Board ve çözümü stdin'e yazma
     stdin.write(board);
     stdin.write(solution);
     
-    println!("Prepared input for ELF program");
+    println!("");
     
-    // Initialize SP1 prover client
+    // SP1 prover client'ını başlat
     let client = sp1_sdk::ProverClient::from_env();
     println!("Successfully created SP1 ProverClient");
     
-    // Generate SP1 proof (setup now returns a tuple directly, not a Result)
+    // SP1 proof oluştur (setup artık Result değil doğrudan tuple döndürüyor)
     println!("Setting up proving key...");
     let (pk, vk) = client.setup(SUDOKU_ELF);
     println!("Successfully set up proving key and verification key");
@@ -157,7 +157,7 @@ fn generate_zk_proof(board: &[[u8; SUDOKU_SIZE]; SUDOKU_SIZE], solution: &[[u8; 
     match client.prove(&pk, &stdin).run() {
         Ok(proof_with_values) => {
             println!("Successfully generated ZK proof");
-            // Serialize the proof to a vector
+            // Proof'u vektöre serileştirmek için
             let serialized_proof = bincode::serialize(&proof_with_values)
                 .map_err(|e| format!("Failed to serialize proof: {}", e))?;
             println!("Serialized ZK proof of size {} bytes", serialized_proof.len());

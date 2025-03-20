@@ -1,5 +1,5 @@
-//! Program that checks the validity of a sudoku board and solution.
-//! If the board and solution are correct, it generates a ZK proof.
+//! Bir sudoku tahtası ve çözümünün doğruluğunu kontrol eden program.
+//! Tahta ve çözüm doğruysa ZK kanıtı oluşturur.
 
 // These two lines are necessary for the program to properly compile.
 //
@@ -8,24 +8,20 @@
 #![no_main]
 sp1_zkvm::entrypoint!(main);
 
-use sp1_sdk::{SP1Stdin, SP1Prover, SP1Verifier};
-use sudoku_lib::{PublicValuesStruct, SUDOKU_SIZE, verify_sudoku};
 use alloy_sol_types::SolType;
+use sudoku_lib::{verify_sudoku, PublicValuesStruct, SUDOKU_SIZE};
 
-// The entrypoint to the program.
-fn main() {
-    let mut stdin = SP1Stdin::new();
+pub fn main() {
+    // Bulmaca ve çözümünü okuyalım
+    let board = sp1_zkvm::io::read::<[[u8; SUDOKU_SIZE]; SUDOKU_SIZE]>();
+    let solution = sp1_zkvm::io::read::<[[u8; SUDOKU_SIZE]; SUDOKU_SIZE]>();
 
-    // Read the puzzle and solution
-    let board: [[u8; SUDOKU_SIZE]; SUDOKU_SIZE] = stdin.read();
-    let solution: [[u8; SUDOKU_SIZE]; SUDOKU_SIZE] = stdin.read();
-
-    // Perform Sudoku validation
+    // Sudoku doğrulamasını yapalım
     let is_valid = verify_sudoku(board, solution);
 
-    // Set the validation result as the public value
-    let public_values = PublicValuesStruct { is_valid };
+    // Doğrulama sonucunu kamu değeri olarak belirtelim
+    let bytes = PublicValuesStruct::abi_encode(&PublicValuesStruct { is_valid });
 
-    // Commit to the public values
-    SP1Prover::commit(&public_values);
+    // Kamu değerlerine commit edelim
+    sp1_zkvm::io::commit_slice(&bytes);
 }

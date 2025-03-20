@@ -9,20 +9,6 @@
 //! ```shell
 //! RUST_LOG=info cargo run --release --bin evm -- --system plonk
 //! ```
-//!
-//! Commands related to generating EVM compatible proofs and verifying them
-//!
-//! Usage:
-//! ```bash
-//! # Generate EVM compatible proof
-//! cargo run -p sudoku-script --bin evm -- generate-proof
-//!
-//! # Generate verifier contract
-//! cargo run -p sudoku-script --bin evm -- generate-verifier
-//!
-//! # Verify proof
-//! cargo run -p sudoku-script --bin evm -- verify-proof
-//! ```
 
 use alloy_sol_types::SolType;
 use clap::{Parser, ValueEnum};
