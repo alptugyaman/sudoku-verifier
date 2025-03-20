@@ -1,5 +1,5 @@
-//! Bir sudoku tahtası ve çözümünün doğruluğunu kontrol eden program.
-//! Tahta ve çözüm doğruysa ZK kanıtı oluşturur.
+//! Program that checks the validity of a sudoku board and solution.
+//! If the board and solution are correct, it generates a ZK proof.
 
 // These two lines are necessary for the program to properly compile.
 //
@@ -12,16 +12,16 @@ use alloy_sol_types::SolType;
 use sudoku_lib::{verify_sudoku, PublicValuesStruct, SUDOKU_SIZE};
 
 pub fn main() {
-    // Bulmaca ve çözümünü okuyalım
+    // Read the puzzle and solution
     let board = sp1_zkvm::io::read::<[[u8; SUDOKU_SIZE]; SUDOKU_SIZE]>();
     let solution = sp1_zkvm::io::read::<[[u8; SUDOKU_SIZE]; SUDOKU_SIZE]>();
 
-    // Sudoku doğrulamasını yapalım
+    // Perform Sudoku validation
     let is_valid = verify_sudoku(board, solution);
 
-    // Doğrulama sonucunu kamu değeri olarak belirtelim
+    // Set the validation result as the public value
     let bytes = PublicValuesStruct::abi_encode(&PublicValuesStruct { is_valid });
 
-    // Kamu değerlerine commit edelim
+    // Commit to the public values
     sp1_zkvm::io::commit_slice(&bytes);
 }

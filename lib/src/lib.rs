@@ -1,6 +1,6 @@
 use alloy_sol_types::sol;
 
-// Sudoku boyutu - 9x9 sudoku için
+// Sudoku size - for 9x9 sudoku
 pub const SUDOKU_SIZE: usize = 9;
 pub const GRID_SIZE: usize = 3;
 
@@ -11,14 +11,14 @@ sol! {
     }
 }
 
-/// Sudoku tahtasının ve çözümünün doğru olup olmadığını kontrol eder
+/// Checks if the Sudoku board and solution are correct
 pub fn verify_sudoku(board: [[u8; SUDOKU_SIZE]; SUDOKU_SIZE], solution: [[u8; SUDOKU_SIZE]; SUDOKU_SIZE]) -> bool {
-    // İlk olarak, board ve çözümün birbirine uygunluğunu kontrol ediyoruz
+    // First, we check if the board and solution are consistent with each other
     if !check_board_solution_consistency(board, solution) {
         return false;
     }
 
-    // Sudoku çözümünün doğruluğunu kontrol ediyoruz
+    // We check if the sudoku solution is valid
     if !is_valid_solution(solution) {
         return false;
     }
@@ -26,12 +26,12 @@ pub fn verify_sudoku(board: [[u8; SUDOKU_SIZE]; SUDOKU_SIZE], solution: [[u8; SU
     true
 }
 
-/// Bulmaca tahtasındaki değerlerin çözümle tutarlı olup olmadığını kontrol eder
-/// Yani, bulmacada belirtilen tüm sayılar (0 olmayan) çözümde aynı yerde olmalıdır
+/// Checks if the values in the puzzle board are consistent with the solution
+/// That is, all numbers specified in the puzzle (non-zero) must be in the same position in the solution
 fn check_board_solution_consistency(board: [[u8; SUDOKU_SIZE]; SUDOKU_SIZE], solution: [[u8; SUDOKU_SIZE]; SUDOKU_SIZE]) -> bool {
     for i in 0..SUDOKU_SIZE {
         for j in 0..SUDOKU_SIZE {
-            // Eğer bulmacada bir sayı varsa (0 değilse), çözümdeki aynı konumdaki sayıyla eşleşmeli
+            // If there is a number in the puzzle (not 0), it should match the same position in the solution
             if board[i][j] != 0 && board[i][j] != solution[i][j] {
                 return false;
             }
@@ -40,11 +40,11 @@ fn check_board_solution_consistency(board: [[u8; SUDOKU_SIZE]; SUDOKU_SIZE], sol
     true
 }
 
-/// Sudoku çözümünün geçerli olup olmadığını kontrol eder
+/// Checks if a Sudoku solution is valid
 fn is_valid_solution(solution: [[u8; SUDOKU_SIZE]; SUDOKU_SIZE]) -> bool {
-    // Her satır için kontrol
+    // Check for each row
     for row in 0..SUDOKU_SIZE {
-        let mut used = [false; SUDOKU_SIZE + 1]; // 1-9 sayıları için
+        let mut used = [false; SUDOKU_SIZE + 1]; // For numbers 1-9
         for col in 0..SUDOKU_SIZE {
             let num = solution[row][col];
             if num == 0 || num > 9 || used[num as usize] {
@@ -54,9 +54,9 @@ fn is_valid_solution(solution: [[u8; SUDOKU_SIZE]; SUDOKU_SIZE]) -> bool {
         }
     }
 
-    // Her sütun için kontrol
+    // Check for each column
     for col in 0..SUDOKU_SIZE {
-        let mut used = [false; SUDOKU_SIZE + 1]; // 1-9 sayıları için
+        let mut used = [false; SUDOKU_SIZE + 1]; // For numbers 1-9
         for row in 0..SUDOKU_SIZE {
             let num = solution[row][col];
             if num == 0 || num > 9 || used[num as usize] {
@@ -66,10 +66,10 @@ fn is_valid_solution(solution: [[u8; SUDOKU_SIZE]; SUDOKU_SIZE]) -> bool {
         }
     }
 
-    // 3x3 alt kareler için kontrol
+    // Check for 3x3 sub-grids
     for box_row in 0..GRID_SIZE {
         for box_col in 0..GRID_SIZE {
-            let mut used = [false; SUDOKU_SIZE + 1]; // 1-9 sayıları için
+            let mut used = [false; SUDOKU_SIZE + 1]; // For numbers 1-9
             for row in 0..GRID_SIZE {
                 for col in 0..GRID_SIZE {
                     let num = solution[box_row * GRID_SIZE + row][box_col * GRID_SIZE + col];
