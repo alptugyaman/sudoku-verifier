@@ -11,7 +11,6 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use clap::Parser;
 use serde::{Deserialize, Serialize};
 use sp1_sdk::{include_elf, SP1Stdin};
 use std::net::SocketAddr;
@@ -20,17 +19,6 @@ use tower_http::cors::{Any, CorsLayer};
 
 /// The ELF file for the Sudoku verifier program.
 pub const SUDOKU_ELF: &[u8] = include_elf!("sudoku-program");
-
-/// Command line arguments for the API.
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-struct Args {
-    #[clap(long, default_value = "3000")]
-    port: u16,
-
-    #[clap(long, default_value = "true")]
-    use_zkp: bool,
-}
 
 /// JSON structure for Sudoku verification request.
 #[derive(Deserialize, Debug)]
@@ -44,6 +32,8 @@ struct SudokuRequest {
 struct SudokuResponse {
     is_valid: bool,
     proof_generated: bool,
+    job_id: Option<String>,
+    network_used: bool,
 }
 
 #[tokio::main]
@@ -51,9 +41,6 @@ async fn main() {
     // Setup the logger.
     dotenv::dotenv().ok();
     tracing_subscriber::fmt::init();
-
-    // Parse the command line arguments.
-    let args = Args::parse();
 
     // Setup the CORS layer for API
     let cors = CorsLayer::new()
@@ -64,11 +51,11 @@ async fn main() {
     // Setup the API routes
     let app = Router::new()
         .route("/validate-sudoku", post(validate_sudoku))
-        .route("/", get(root_handler)) // Let's add a simple GET handler for the home page
+        .route("/", get(root_handler))
         .layer(cors);
 
     // Start the server
-    let addr = SocketAddr::from(([0, 0, 0, 0], args.port));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3001));
     println!("Sudoku verifier API server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
@@ -82,12 +69,7 @@ async fn root_handler() -> &'static str {
 
 /// API endpoint that validates a Sudoku board.
 async fn validate_sudoku(Json(request): Json<SudokuRequest>) -> Json<SudokuResponse> {
-    let received_timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
-
-    println!(
-        "Received sudoku verification request at {}",
-        received_timestamp
-    );
+    println!("Received sudoku verification request");
 
     // First, let's perform normal validation
     let is_valid = verify_sudoku(request.board, request.solution);
@@ -95,95 +77,152 @@ async fn validate_sudoku(Json(request): Json<SudokuRequest>) -> Json<SudokuRespo
 
     // If it's valid, let's try to generate a ZK proof
     let mut proof_generated = false;
+    let mut job_id: Option<String> = None;
+    let mut network_used = false;
 
     if is_valid {
         println!("Attempting to generate ZK proof");
 
-        // Try to generate a proof with SP1
-        match generate_zk_proof(&request.board, &request.solution) {
-            Ok(proof) => {
-                proof_generated = true;
-                println!(
-                    "Successfully generated ZK proof of size {} bytes",
-                    proof.len()
-                );
+        // Check if we should use the network prover
+        let use_network =
+            std::env::var("SP1_PROVER").unwrap_or_else(|_| "local".to_string()) == "network";
 
-                // Save ZK proof to a file
-                let proof_dir = "proofs";
-                std::fs::create_dir_all(proof_dir).unwrap_or_else(|_| {
-                    println!("Proofs directory already exists or cannot be created");
-                });
-
-                let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-                let proof_path = format!("{}/zk_proof_{}.bin", proof_dir, timestamp);
-
-                match std::fs::write(&proof_path, &proof) {
-                    Ok(_) => println!("ZK proof saved to file: {}", proof_path),
-                    Err(e) => eprintln!("Failed to save ZK proof to file: {}", e),
+        if use_network {
+            println!("Using Succinct Prover Network for proof generation");
+            match generate_network_proof(&request.board, &request.solution).await {
+                Ok((_proof, job_id_str)) => {
+                    proof_generated = true;
+                    job_id = Some(job_id_str);
+                    network_used = true;
+                    println!("Successfully generated ZK proof via Succinct Network");
+                }
+                Err(err) => {
+                    eprintln!("Error generating ZK proof via network: {}", err);
                 }
             }
-            Err(err) => {
-                eprintln!("Error generating ZK proof: {}", err);
+        } else {
+            println!("Using local prover for proof generation");
+            match generate_local_proof(&request.board, &request.solution) {
+                Ok(_proof) => {
+                    proof_generated = true;
+                    println!("Successfully generated local ZK proof");
+                }
+                Err(err) => {
+                    eprintln!("Error generating local ZK proof: {}", err);
+                }
             }
         }
     }
 
     println!("Proof generation status: {}", proof_generated);
-    let proof_generated_timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
-
-    println!(
-        "Sudoku verification response sent at {}",
-        proof_generated_timestamp
-    );
 
     Json(SudokuResponse {
         is_valid,
         proof_generated,
+        job_id,
+        network_used,
     })
 }
 
-/// Generates a ZK proof using SP1.
-fn generate_zk_proof(
+/// Generates a ZK proof using Succinct Prover Network
+async fn generate_network_proof(
     board: &[[u8; SUDOKU_SIZE]; SUDOKU_SIZE],
     solution: &[[u8; SUDOKU_SIZE]; SUDOKU_SIZE],
-) -> Result<Vec<u8>, String> {
-    println!("Starting ZK proof generation process");
+) -> Result<(Vec<u8>, String), String> {
+    println!("Starting ZK proof generation with Succinct Prover Network");
+
+    // Get private key from environment
+    let private_key = std::env::var("NETWORK_PRIVATE_KEY")
+        .map_err(|_| "Please set your NETWORK_PRIVATE_KEY environment variable".to_string())?;
+
+    if private_key == "YOUR_PRIVATE_KEY_HERE" || private_key.is_empty() {
+        return Err("Please set a valid NETWORK_PRIVATE_KEY environment variable".to_string());
+    }
 
     // Create input using SP1Stdin
     let mut stdin = SP1Stdin::new();
-
-    // Write board and solution to stdin
     stdin.write(board);
     stdin.write(solution);
 
-    println!("Prepared input for ELF program");
+    println!("Prepared input for network proof generation");
 
-    // Initialize SP1 prover client
-    let client = sp1_sdk::ProverClient::from_env();
-    println!("Successfully created SP1 ProverClient");
+    // Wrap the entire network proof generation in a panic-safe block
+    let result = std::panic::catch_unwind(|| {
+        // Generate the proof using the network prover
+        let client = sp1_sdk::ProverClient::from_env();
+        println!("Created ProverClient from env");
 
-    // Generate SP1 proof (setup now returns a tuple directly, not a Result)
-    println!("Setting up proving key...");
-    let (pk, _vk) = client.setup(SUDOKU_ELF);
-    println!("Successfully set up proving key and verification key");
+        let (pk, _vk) = client.setup(SUDOKU_ELF);
+        println!("Generated proving and verifying keys for network");
 
-    println!("Starting proof generation with SP1...");
-    match client.prove(&pk, &stdin).run() {
-        Ok(proof_with_values) => {
-            println!("Successfully generated ZK proof");
-            // Serialize the proof to a vector
-            let serialized_proof = bincode::serialize(&proof_with_values)
-                .map_err(|e| format!("Failed to serialize proof: {}", e))?;
-
-            println!(
-                "Serialized ZK proof of size {} bytes",
-                serialized_proof.len()
-            );
-            Ok(serialized_proof)
+        // Try to generate the proof
+        match client.prove(&pk, &stdin).plonk().run() {
+            Ok(proof) => {
+                println!("Network proof generated successfully");
+                Ok(proof)
+            }
+            Err(e) => {
+                eprintln!("Error in network proof generation: {}", e);
+                Err(format!("Failed to generate network proof: {}", e))
+            }
         }
-        Err(err) => {
-            eprintln!("Failed to generate proof: {}", err);
-            Err(format!("Failed to generate proof: {}", err))
+    });
+
+    match result {
+        Ok(Ok(proof)) => {
+            // Generate a unique job ID for tracking
+            let job_id = format!(
+                "net_proof_{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+            );
+            println!("Network proof completed with job_id: {}", job_id);
+            Ok((proof.bytes(), job_id))
+        }
+        Ok(Err(e)) => Err(e),
+        Err(_) => {
+            eprintln!("Network proof generation panicked!");
+            Err("Network proof generation panicked - this usually indicates authentication or network issues".to_string())
         }
     }
+}
+
+/// Generates a ZK proof using local SP1 prover
+fn generate_local_proof(
+    board: &[[u8; SUDOKU_SIZE]; SUDOKU_SIZE],
+    solution: &[[u8; SUDOKU_SIZE]; SUDOKU_SIZE],
+) -> Result<Vec<u8>, String> {
+    println!("Starting local ZK proof generation");
+
+    // Create input using SP1Stdin
+    let mut stdin = SP1Stdin::new();
+    stdin.write(board);
+    stdin.write(solution);
+
+    println!("Prepared input for local proof generation");
+
+    // Generate the proof using the local prover
+    let client = sp1_sdk::ProverClient::from_env();
+    let (pk, vk) = client.setup(SUDOKU_ELF);
+
+    println!("Generated proving and verifying keys");
+
+    let proof = client
+        .prove(&pk, &stdin)
+        .plonk()
+        .run()
+        .map_err(|e| format!("Failed to generate local proof: {}", e))?;
+
+    println!("Local proof generated successfully");
+
+    // Verify the proof
+    client
+        .verify(&proof, &vk)
+        .map_err(|e| format!("Failed to verify local proof: {}", e))?;
+
+    println!("Local proof verified successfully");
+
+    Ok(proof.bytes())
 }
